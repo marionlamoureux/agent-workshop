@@ -27,22 +27,32 @@
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC
-
-# COMMAND ----------
-
 import urllib
 import os
 from databricks.sdk.service import catalog
+from databricks.sdk import WorkspaceClient
+import yaml
 
 catalog_name = "marion_test"
 schema_name = "agents"
 volume = "data"
 
+# Use the workspace client to retrieve information about the current user
+#w = WorkspaceClient()
+#user_email = w.current_user.me().display_name
+#username = user_email.split("@")[0]
+#workspace_id = str(w.get_workspace_id())
+
+
+# Allows us to reference these values directly in the SQL/Python function creation
+dbutils.widgets.text("catalog_name", defaultValue=catalog_name, label="Catalog Name")
+dbutils.widgets.text("schema_name", defaultValue=schema_name, label="Schema Name")
+#dbutils.widgets.text("workspace_id", defaultValue=workspace_id, label="Workspace ID")
+
 files = ['browsing_history', 'customers', 'email_logs', 'products_agents', 'purchases']
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_name}.{schema_name}")
 spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog_name}.{schema_name}.{volume}")
-base_url = 'https://raw.githubusercontent.com/databricks/tmm/main/agents-workshop/data/'
+base_url = 'https://raw.githubusercontent.com/marionlamoureux/agent-workshop/June2025/agents-workshop/data/'
 
 
 for d in files:
@@ -58,32 +68,6 @@ for d in files:
 
 # COMMAND ----------
 
-# DBTITLE 1,Parameter Configs
-from databricks.sdk import WorkspaceClient
-import yaml
-import os
-
-# Use the workspace client to retrieve information about the current user
-w = WorkspaceClient()
-user_email = w.current_user.me().display_name
-username = user_email.split("@")[0]
-
-# Catalog and schema have been automatically created thanks to lab environment
-#catalog_name = f"{username}_vocareum_com"
-catalog_name = "marion_test"
-schema_name = "agents"
-
-workspace_id = str(w.get_workspace_id())
-
-# Allows us to reference these values directly in the SQL/Python function creation
-dbutils.widgets.text("catalog_name", defaultValue=catalog_name, label="Catalog Name")
-dbutils.widgets.text("schema_name", defaultValue=schema_name, label="Schema Name")
-dbutils.widgets.text("workspace_id", defaultValue=workspace_id, label="Workspace ID")
-
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_name}.{schema_name}")
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC # Customer Service Return Processing Workflow
 # MAGIC
@@ -91,87 +75,93 @@ spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_name}.{schema_name}")
 # MAGIC
 # MAGIC ---
 # MAGIC
-# MAGIC ## 1. Get the Latest Return in the Processing Queue
-# MAGIC - **Action**: Identify and retrieve the most recent return request from the ticketing or returns system.  
-# MAGIC - **Why**: Ensures you’re working on the most urgent or next-in-line customer issue.
+# MAGIC ## 1. Get the Latest purchase for a given customer
+# MAGIC - **Action**: Identify and retrieve the most recent purchase for a given customer.
+# MAGIC - **Why**: Agregate information about this customers recent interests.
 # MAGIC
 # MAGIC ---
 
 # COMMAND ----------
 
-# DBTITLE 1,Get the Latest Return in the Processing Queue
+# DBTITLE 1,Get the last order
 # MAGIC %sql
-# MAGIC -- Select the date of the interaction, issue category, issue description, and customer name
-# MAGIC SELECT 
-# MAGIC   cast(date_time as date) as case_time, 
-# MAGIC   issue_category, 
-# MAGIC   issue_description, 
-# MAGIC   name
-# MAGIC FROM ${catalog_name}.${schema_name}.cust_service_data 
-# MAGIC -- Order the results by the interaction date and time in descending order
-# MAGIC ORDER BY date_time DESC
-# MAGIC -- Limit the results to the most recent interaction
-# MAGIC LIMIT 1
+# MAGIC -- Return the last order for a given customer name
+# MAGIC SELECT p.purchase_date, p.item_id, p.customer_id
+# MAGIC FROM ${catalog_name}.${schema_name}.purchases  p
+# MAGIC JOIN ${catalog_name}.${schema_name}.customers c ON p.customer_id = c.customer_id
+# MAGIC WHERE c.name = 'David Sanchez'
+# MAGIC ORDER BY p.purchase_date DESC
+# MAGIC LIMIT 1; 
 
 # COMMAND ----------
 
-# DBTITLE 1,Create a function registered to Unity Catalog
 # MAGIC %sql
 # MAGIC -- First lets make sure it doesnt already exist
-# MAGIC DROP FUNCTION IF EXISTS ${catalog_name}.${schema_name}.get_latest_return;
-# MAGIC -- Now we create our first function. This takes in no parameters and returns the most recent interaction.
+# MAGIC DROP FUNCTION IF EXISTS ${catalog_name}.${schema_name}.return_last_order;
+# MAGIC
+# MAGIC -- Now we create our first function. This takes in one parameter and returns the most recent interaction for a given customer.
 # MAGIC CREATE OR REPLACE FUNCTION
-# MAGIC ${catalog_name}.${schema_name}.get_latest_return()
-# MAGIC returns table(purchase_date DATE, issue_category STRING, issue_description STRING, name STRING)
-# MAGIC COMMENT 'Returns the most recent customer service interaction, such as returns.'
-# MAGIC return
-# MAGIC (
-# MAGIC   SELECT 
-# MAGIC     cast(date_time as date) as purchase_date, 
-# MAGIC     issue_category, 
-# MAGIC     issue_description, 
-# MAGIC     name
-# MAGIC   FROM ${catalog_name}.${schema_name}.cust_service_data 
-# MAGIC   ORDER BY date_time DESC
-# MAGIC   LIMIT 1
-# MAGIC )
+# MAGIC ${catalog_name}.${schema_name}.return_last_order(customer_name STRING)
+# MAGIC RETURNS TABLE(purchase_date DATE, item_id STRING, customer_id STRING, `name` STRING)
+# MAGIC COMMENT 'Returns the most recent purchase for the customer'
+# MAGIC RETURN
+# MAGIC SELECT p.purchase_date, p.item_id, p.customer_id, c.name
+# MAGIC FROM ${catalog_name}.${schema_name}.purchases  p
+# MAGIC JOIN ${catalog_name}.${schema_name}.customers c 
+# MAGIC ON p.customer_id = c.customer_id
+# MAGIC WHERE c.`name` = customer_name
+# MAGIC ORDER BY p.purchase_date DESC
+# MAGIC LIMIT 1;
+# MAGIC
 
 # COMMAND ----------
 
 # DBTITLE 1,Test function call to retrieve latest return
 # MAGIC %sql
-# MAGIC select * from ${catalog_name}.${schema_name}.get_latest_return()
+# MAGIC select * from ${catalog_name}.${schema_name}.return_last_order('David Sanchez')
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ---
 # MAGIC
-# MAGIC ## 2. Retrieve Company Policies
-# MAGIC - **Action**: Access the internal knowledge base or policy documents related to returns, refunds, and exchanges.  
-# MAGIC - **Why**: Verifying you’re in compliance with company guidelines prevents potential errors and conflicts.
+# MAGIC ## 2. Retrieve customer's latest browsing activity
+# MAGIC - **Action**:  
+# MAGIC - **Why**:
 # MAGIC
 # MAGIC ---
 
 # COMMAND ----------
 
-# DBTITLE 1,Create function to retrieve return policy
 # MAGIC %sql
-# MAGIC CREATE OR REPLACE FUNCTION ${catalog_name}.${schema_name}.get_return_policy()
-# MAGIC RETURNS TABLE (policy STRING, policy_details STRING, last_updated DATE)
-# MAGIC COMMENT 'Returns the details of the Return Policy'
-# MAGIC LANGUAGE SQL
-# MAGIC RETURN 
-# MAGIC SELECT policy, policy_details, last_updated 
-# MAGIC FROM ${catalog_name}.${schema_name}.policies
-# MAGIC WHERE policy = 'Return Policy'
-# MAGIC LIMIT 1;
+# MAGIC -- Return today's browsing history for a given customer name
+# MAGIC SELECT b.customer_id, b.item_id, b.action
+# MAGIC FROM ${catalog_name}.${schema_name}.browsing_history b
+# MAGIC JOIN ${catalog_name}.${schema_name}.customers c 
+# MAGIC ON b.customer_id = c.customer_id
+# MAGIC WHERE c.name = 'David Sanchez'
+# MAGIC   --AND DATE(b.timestamp) = CURRENT_DATE();
 
 # COMMAND ----------
 
-# DBTITLE 1,Test function to retrieve return policy
+# DBTITLE 1,Create function to retrieve browsing history
 # MAGIC %sql
-# MAGIC select * from ${catalog_name}.${schema_name}.get_return_policy()
+# MAGIC CREATE OR REPLACE FUNCTION ${catalog_name}.${schema_name}.return_browsing_history(customer_name STRING)
+# MAGIC RETURNS TABLE (customer_id STRING, item_id STRING, action STRING)
+# MAGIC COMMENT 'Returns the most recent browsing history for the customer'
+# MAGIC LANGUAGE SQL
+# MAGIC RETURN 
+# MAGIC SELECT b.customer_id, b.item_id, b.action
+# MAGIC FROM ${catalog_name}.${schema_name}.browsing_history b
+# MAGIC JOIN ${catalog_name}.${schema_name}.customers c 
+# MAGIC ON b.customer_id = c.customer_id
+# MAGIC WHERE c.name = customer_name;
+
+# COMMAND ----------
+
+# DBTITLE 1,Test function to retrieve browsing history
+# MAGIC %sql
+# MAGIC select * from ${catalog_name}.${schema_name}.return_browsing_history('David Sanchez')
 
 # COMMAND ----------
 
@@ -186,24 +176,31 @@ spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_name}.{schema_name}")
 
 # COMMAND ----------
 
-# DBTITLE 1,Create function that retrieves userID based on name
+# DBTITLE 1,Create function to retrieve a user's email log
 # MAGIC %sql
-# MAGIC CREATE OR REPLACE FUNCTION ${catalog_name}.${schema_name}.get_user_id(user_name STRING)
-# MAGIC RETURNS STRING
-# MAGIC COMMENT 'This takes the name of a customer as an input and returns the corresponding user_id'
+# MAGIC CREATE OR REPLACE FUNCTION ${catalog_name}.${schema_name}.return_email_log(customer_name STRING)
+# MAGIC RETURNS TABLE(customer_id STRING, subject STRING,	sent_date DATE,	opened BOOLEAN,	clicked BOOLEAN)
+# MAGIC COMMENT 'This takes the name of a customer as an input and returns the email log'
 # MAGIC LANGUAGE SQL
-# MAGIC RETURN 
-# MAGIC SELECT customer_id 
-# MAGIC FROM ${catalog_name}.${schema_name}.cust_service_data 
-# MAGIC WHERE name = user_name
-# MAGIC LIMIT 1
-# MAGIC ;
+# MAGIC RETURN
+# MAGIC SELECT e.customer_id, e.subject, e.sent_date, e.opened, e.clicked
+# MAGIC FROM ${catalog_name}.${schema_name}.email_logs e
+# MAGIC JOIN ${catalog_name}.${schema_name}.customers c ON e.customer_id = c.customer_id
+# MAGIC WHERE c.name = customer_name;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT e.customer_id, e.subject, e.sent_date, e.opened, e.clicked
+# MAGIC FROM marion_test.agents.email_logs e
+# MAGIC JOIN marion_test.agents.customers c ON e.customer_id = c.customer_id
+# MAGIC WHERE c.name = 'David Sanchez'
 
 # COMMAND ----------
 
 # DBTITLE 1,Test function that retrieves userID based on name
 # MAGIC %sql
-# MAGIC select ${catalog_name}.${schema_name}.get_user_id('Nicolas Pelaez')
+# MAGIC SELECT * FROM ${catalog_name}.${schema_name}.return_email_log('David Sanchez')
 
 # COMMAND ----------
 
@@ -215,26 +212,6 @@ spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_name}.{schema_name}")
 # MAGIC - **Why**: Reviewing past purchases, return patterns, and any specific notes helps you determine appropriate next steps (e.g., confirm eligibility for return).
 # MAGIC
 # MAGIC ---
-
-# COMMAND ----------
-
-# DBTITLE 1,Create function that retrieves order history based on userID
-# MAGIC %sql
-# MAGIC CREATE OR REPLACE FUNCTION ${catalog_name}.${schema_name}.get_order_history(user_id STRING)
-# MAGIC RETURNS TABLE (returns_last_12_months INT, issue_category STRING)
-# MAGIC COMMENT 'This takes the user_id of a customer as an input and returns the number of returns and the issue category'
-# MAGIC LANGUAGE SQL
-# MAGIC RETURN 
-# MAGIC SELECT count(*) as returns_last_12_months, issue_category 
-# MAGIC FROM ${catalog_name}.${schema_name}.cust_service_data 
-# MAGIC WHERE customer_id = user_id 
-# MAGIC GROUP BY issue_category;
-
-# COMMAND ----------
-
-# DBTITLE 1,Test function that retrieves order history based on userID
-# MAGIC %sql
-# MAGIC select * from ${catalog_name}.${schema_name}.get_order_history('453e50e0-232e-44ea-9fe3-28d550be6294')
 
 # COMMAND ----------
 
