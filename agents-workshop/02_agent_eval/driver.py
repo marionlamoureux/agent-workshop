@@ -46,8 +46,19 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -U -qqqq databricks-agents mlflow langchain==0.2.16 langgraph-checkpoint==1.0.12  langchain_core langchain-community==0.2.16 langgraph==0.2.16 pydantic langchain_databricks
+# MAGIC %pip install -U -qqqq databricks-agents mlflow langchain==0.2.16 langchain-community==0.2.16 langgraph-checkpoint==1.0.12  langchain_core  langgraph==0.2.16 pydantic
 # MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
+
+ # %pip install -U -qqqq langchain_databricks
+
+# COMMAND ----------
+
+# Catalog and schema have been automatically created thanks to lab environment
+#catalog_name = f"{username}_vocareum_com"
+catalog_name = "marion_test"
+schema_name = "email"
 
 # COMMAND ----------
 
@@ -65,7 +76,7 @@ input_example = {
     "messages": [
         {
             "role": "user",
-            "content": "Can you give me some troubleshooting steps for SoundWave X5 Pro Headphones that won't connect?"
+            "content": "Can you draft an marketing email for customer David SAnchez based on the items found in his browsing history ?"
         }
     ]
 }
@@ -82,7 +93,7 @@ with mlflow.start_run():
             "langgraph-checkpoint==1.0.12",
             "langgraph==0.2.16",
             "pydantic",
-            "langchain_databricks", # used for the retriever tool
+            #"langchain_databricks", # used for the retriever tool
         ],
         model_config="config.yml",
         artifact_path='agent',
@@ -102,55 +113,13 @@ import pandas as pd
 
 data = {
     "request": [
-        "What color options are available for the Aria Modern Bookshelf?",
-        "How should I clean the Aurora Oak Coffee Table to avoid damaging it?",
-        "How should I clean the BlendMaster Elite 4000 after each use?",
-        "How many colors is the Flexi-Comfort Office Desk available in?",
-        "What sizes are available for the StormShield Pro Men's Weatherproof Jacket?",
-        "What should I do if my SmartX Pro device won’t turn on?",
-        "How many people can the Elegance Extendable Dining Table seat comfortably?",
-        "What colors is the Urban Explorer Jacket available in?",
-        "What is the water resistance rating of the BrownBox SwiftWatch X500?",
-        "What colors are available for the StridePro Runner?"
+        "What product recommendations could we make for customer David Sanchez based on his latest order? ",
+        "What product recommendations could we make for customer David Sanchez based on his wishlisted items?"
     ],
     "expected_facts": [
         [
-            "The Aria Modern Bookshelf is available in natural oak finish",
-            "The Aria Modern Bookshelf is available in black finish",
-            "The Aria Modern Bookshelf is available in white finish"
-        ],
-        [
-            "Use a soft, slightly damp cloth for cleaning.",
-            "Avoid using abrasive cleaners."
-        ],
-        [
-            "The jar of the BlendMaster Elite 4000 should be rinsed.",
-            "Rinse with warm water.",
-            "The cleaning should take place after each use."
-        ],
-        [
-            "The Flexi-Comfort Office Desk is available in three colors."
-        ],
-        [
-            "The available sizes for the StormShield Pro Men's Weatherproof Jacket are Small, Medium, Large, XL, and XXL."
-        ],
-        [
-            "Press and hold the power button for 20 seconds to reset the device.",
-            "Ensure the device is charged for at least 30 minutes before attempting to turn it on again."
-        ],
-        [
-            "The Elegance Extendable Dining Table can comfortably seat 6 people."
-        ],
-        [
-            "The Urban Explorer Jacket is available in charcoal, navy, and olive green"
-        ],
-        [
-            "The water resistance rating of the BrownBox SwiftWatch X500 is 5 ATM."
-        ],
-        [
-            "The colors available for the StridePro Runner should include Midnight Blue.",
-            "The colors available for the StridePro Runner should include Electric Red.",
-            "The colors available for the StridePro Runner should include Forest Green."
+            "Products the most similar to the ones in the customer's cart are: 1. Product 1, 2. Product 2"
+            "Products the customer has previously purchased are: product 3, very similar in texture and color to product 4"
         ]
     ]
 }
@@ -197,10 +166,7 @@ w = WorkspaceClient()
 user_email = w.current_user.me().display_name
 username = user_email.split("@")[0]
 
-# Catalog and schema have been automatically created thanks to lab environment
-#catalog_name = f"{username}_vocareum_com"
-catalog_name = "retail_prod"
-schema_name = "agents"
+
 
 # TODO: define the catalog, schema, and model name for your UC model
 model_name = "product_agent"

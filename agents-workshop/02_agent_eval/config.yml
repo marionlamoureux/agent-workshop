@@ -1,5 +1,5 @@
 agent_prompt: "Use tools to retrieve all information needed. Be creative and polite with marketing email."
 llm_endpoint: "databricks-meta-llama-3-3-70b-instruct"
-warehouse_id: 42b73f0557aae1e4
+warehouse_id: 148ccb90800933a1
 uc_functions:
   - "marion_test.email.*"

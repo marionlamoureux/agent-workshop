@@ -34,13 +34,13 @@ from databricks.sdk import WorkspaceClient
 import yaml
 import mlflow
 
-# Allows us to reference these values directly in the SQL/Python function creation
-dbutils.widgets.text("catalog_name", defaultValue=catalog_name, label="Catalog Name")
-dbutils.widgets.text("schema_name", defaultValue=schema_name, label="Schema Name")
 catalog_name = "marion_test"
 schema_name = "email"
 volume="data"
 
+# Allows us to reference these values directly in the SQL/Python function creation
+dbutils.widgets.text("catalog_name", defaultValue=catalog_name, label="Catalog Name")
+dbutils.widgets.text("schema_name", defaultValue=schema_name, label="Schema Name")
 
 files = ['browsing_history', 'customers', 'email_logs', 'product_catalog', 'purchases']
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_name}.{schema_name}")
@@ -80,7 +80,7 @@ for d in files:
 
 # COMMAND ----------
 
-vector_endpoint_name = f'vs_endpoint_product_{schema_name}5'
+vector_endpoint_name = f'vs_endpoint_product_{schema_name}'
 index_name = f'{catalog_name}.{schema_name}.product_catalog_index'
 uc_function = f'{catalog_name}.{schema_name}.*'
 
@@ -162,24 +162,9 @@ index = client.create_delta_sync_index(
 
 # COMMAND ----------
 
-# DBTITLE 1,Create a function registered to Unity Catalog
-# MAGIC %sql
-# MAGIC CREATE OR REPLACE FUNCTION ${catalog_name}.${schema_name}.return_browsing_history(customer_name STRING)
-# MAGIC RETURNS TABLE (customer_id STRING, item_id STRING, action STRING)
-# MAGIC COMMENT 'Returns the most recent browsing history for the customer on the luxury fashion eshop'
-# MAGIC LANGUAGE SQL
-# MAGIC RETURN 
-# MAGIC SELECT b.customer_id, b.item_id, b.action
-# MAGIC FROM ${catalog_name}.${schema_name}.browsing_history b
-# MAGIC JOIN ${catalog_name}.${schema_name}.customers c 
-# MAGIC ON b.customer_id = c.customer_id
-# MAGIC WHERE c.name = initcap(customer_name);
-
-# COMMAND ----------
-
 # DBTITLE 1,Test function call to retrieve latest order
 # MAGIC %sql
-# MAGIC select * from ${catalog_name}.${schema_name}.return_browsing_history('david Sanchez')
+# MAGIC select * from ${catalog_name}.${schema_name}.return_last_order('david Sanchez')
 
 # COMMAND ----------
 
