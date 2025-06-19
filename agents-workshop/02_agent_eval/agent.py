@@ -39,6 +39,11 @@
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC Please update with your info: [config.yml]($./config.yml): contains the configurations. 
+
+# COMMAND ----------
+
 # MAGIC %pip install -U -qqqq mlflow-skinny langchain==0.2.16 langgraph-checkpoint==1.0.12 langchain_core langchain-community==0.2.16 langgraph==0.2.16 pydantic langchain_databricks
 # MAGIC dbutils.library.restartPython()
 
@@ -94,20 +99,59 @@ tools = (
 
 # COMMAND ----------
 
+catalog_name = "marion_test"
+schema_name = "email"
+vector_endpoint_name = f'vs_endpoint_product_{schema_name}6'
+index_name = f"{catalog_name}.{schema_name}.product_vs"
+
+# Allows us to reference these values directly in the SQL/Python function creation
+dbutils.widgets.text("catalog_name", defaultValue=catalog_name, label="Catalog Name")
+dbutils.widgets.text("schema_name", defaultValue=schema_name, label="Schema Name")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC ALTER TABLE ${catalog_name}.${schema_name}.product_catalog SET TBLPROPERTIES (delta.enableChangeDataFeed = true)
+
+# COMMAND ----------
+
+from databricks.vector_search.client import VectorSearchClient
+# The following line automatically generates a PAT Token for authentication
+client = VectorSearchClient()
+
+# The following line uses the service principal token for authentication
+# client = VectorSearchClient(service_principal_client_id=<CLIENT_ID>,service_principal_client_secret=<CLIENT_SECRET>)
+
+client.create_endpoint(
+    name=vector_endpoint_name,
+    endpoint_type="STANDARD")
+
+index = client.create_delta_sync_index(
+  endpoint_name=vector_endpoint_name,
+  source_table_name=f'{catalog_name}.{schema_name}.product_catalog',
+  index_name=index_name,
+  pipeline_type="TRIGGERED",
+  primary_key="item_id",
+  embedding_source_column="description",
+  embedding_model_endpoint_name="databricks-gte-large-en"
+)
+
+# COMMAND ----------
+
 from langchain.tools.retriever import create_retriever_tool
 from langchain_databricks.vectorstores import DatabricksVectorSearch
 
-# Connect to an existing Databricks Vector Search endpoint and index
+# Create a Databricks Vector Search endpoint and index
 vector_store = DatabricksVectorSearch(
-  endpoint="one-env-shared-endpoint-14", 
-  index_name="retail_prod.agents.product_docs_vs", 
+  endpoint=vector_endpoint_name, 
+  index_name=index_name, 
   columns=[
-    "product_category",
-    "product_sub_category",
-    "product_name",
-    "product_doc",
-    "product_id",
-    "indexed_doc"
+    "item_id",
+    "name",
+    "category",
+    "subcategory",
+    "description",
+    "price"
   ]
 ).as_retriever(search_kwargs={"k": 5}) 
 #This parameter determines how many results are returned - important for retrieval tuning
@@ -115,17 +159,17 @@ vector_store = DatabricksVectorSearch(
 # Create a tool object that performs retrieval against our vector search index
 retriever_tool = create_retriever_tool(
   vector_store,
-  name="search_product_docs", 
-  description="Use this tool to search for product documentation.", 
+  name="search_product_catalog", 
+  description="Use this tool to search for product description.", 
 )
 
 # Specify the return type schema of our retriever, so that evaluation and UIs can
 # automatically display retrieved chunks
 mlflow.models.set_retriever_schema(
-    primary_key="product_id",
-    text_column="indexed_doc",
-    doc_uri="product_id",
-    name="retail_prod.agents.product_docs_index",
+    primary_key="item_id",
+    text_column="description",
+    doc_uri="item_id",
+    name=index_name,
 )
 
 tools.append(retriever_tool)
@@ -352,8 +396,7 @@ agent = agent_with_raw_output | RunnableGenerator(wrap_output) | ChatCompletions
 
 # COMMAND ----------
 
-# TODO: replace this placeholder input example with an appropriate domain-specific example for your agent
-for event in agent.stream({"messages": [{"role": "user", "content": "Can you give me some troubleshooting steps for SoundWave X5 Pro Headphones that won't connect?"}]}):
+for event in agent.stream({"messages": [{"role": "user", "content": "Please draft a marketing email for David Sanchez recommending a few products from the product catalog resembling the ones found in his browsing history?"}]}):
     print(event, "---" * 20 + "\n")
 
 # COMMAND ----------

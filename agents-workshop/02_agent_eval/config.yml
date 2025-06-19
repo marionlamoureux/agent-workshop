@@ -1,5 +1,5 @@
-agent_prompt: "Use tools to retrieve all information needed. Make sure to follow company policies extremely closely."
+agent_prompt: "Use tools to retrieve all information needed. Be creative and polite with marketing email."
 llm_endpoint: "databricks-meta-llama-3-3-70b-instruct"
-warehouse_id: 862f1d757f0424f7
+warehouse_id: 42b73f0557aae1e4
 uc_functions:
-  - "retail_prod.agents.*"
+  - "marion_test.email.*"
